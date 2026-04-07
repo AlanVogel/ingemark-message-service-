@@ -33,6 +33,7 @@ def _get_service(db: AsyncSession = Depends(get_db)) -> MessageService:
     responses={
         201: {"description": "Message created successfully."},
         401: {"description": "Invalid or missing API key."},
+        409: {"description": "Message with the given ID already exists."},
         422: {"description": "Validation error — invalid payload."},
     },
 )

@@ -22,7 +22,6 @@ class CreateMessageDto(BaseMessageDto):
     message_id: UUID | None = Field(
         default=None,
         description="Optional UUID for the message. Auto-generated if omitted.",
-        json_schema_extra={"example": "f47ac10b-58cc-4372-a567-0e02b2c3d479"},
     )
     chat_id: UUID = Field(
         description="UUID of the chat this message belongs to.",

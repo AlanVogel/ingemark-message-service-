@@ -1,7 +1,9 @@
 import math
 from uuid import UUID
 
-from app.core.exceptions import IngemarkNotFoundError
+from sqlalchemy.exc import IntegrityError
+
+from app.core.exceptions import IngemarkConflictError, IngemarkNotFoundError
 from app.messages.dto import CreateMessageDto, UpdateMessageDto
 from app.messages.interfaces.message_repository import IMessageRepository
 from app.messages.responses import MessageResponse, PaginatedMessagesResponse
@@ -19,7 +21,10 @@ class MessageService:
         self._repository = repository
 
     async def create_message(self, dto: CreateMessageDto) -> MessageResponse:
-        message = await self._repository.create(dto)
+        try:
+            message = await self._repository.create(dto)
+        except IntegrityError:
+            raise IngemarkConflictError(f"Message with id '{dto.message_id}' already exists")
         return MessageResponse.model_validate(message)
 
     async def update_message(self, message_id: UUID, dto: UpdateMessageDto) -> MessageResponse:
