@@ -33,6 +33,14 @@ class MessageResponse(BaseModel):
         description="Who sent the message: 'ai' or 'user'.",
         json_schema_extra={"example": "user"},
     )
+    created_at: datetime = Field(
+        description="Timestamp when the message was persisted.",
+        json_schema_extra={"example": "2026-04-07T12:00:00Z"},
+    )
+    updated_at: datetime | None = Field(
+        description="Timestamp of the last update. null if never updated.",
+        json_schema_extra={"example": "2026-04-07T12:05:00Z"},
+    )
 
     model_config = {"from_attributes": True}
 
@@ -57,4 +65,3 @@ class PaginatedMessagesResponse(BaseModel):
         description="Total number of pages.",
         json_schema_extra={"example": 3},
     )
-    

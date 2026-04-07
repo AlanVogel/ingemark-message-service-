@@ -1,6 +1,6 @@
 # Ingemark Message Service
 
-A message persistence service for an AI assistant system. Built with **FastAPI**, **PostgreSQL**, and **SQLAlchemy 2.0**.
+A message persistence service for an AI assistant system. Built with **FastAPI**, **PostgreSQL**, and **async SQLAlchemy 2.0**.
 
 The service is responsible for archiving messages exchanged between users and an AI assistant. It exposes a secured REST API for creating, updating, and retrieving messages, with data persisted in a PostgreSQL database.
 
@@ -14,8 +14,8 @@ The service is responsible for archiving messages exchanged between users and an
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/ingemark-message-service.git
-cd ingemark-message-service
+git clone https://github.com/AlanVogel/ingemark-message-service-.git
+cd ingemark-message-service-
 
 # 2. Copy environment variables
 cp .env.example .env
@@ -67,7 +67,9 @@ All endpoints except `/health` require an `X-API-Key` header.
   "content": "string",
   "rating": "boolean | null",
   "sent_at": "datetime",
-  "role": "ai | user"
+  "role": "ai | user",
+  "created_at": "datetime",
+  "updated_at": "datetime | null"
 }
 ```
 
@@ -103,8 +105,10 @@ app/
 ├── main.py                        # Application entry point
 ├── core/                          # App-wide infrastructure
 │   ├── config.py                  # Centralized settings (Pydantic Settings)
-│   ├── database.py                # SQLAlchemy engine and session management
+│   ├── database.py                # Async SQLAlchemy engine and session
 │   ├── auth.py                    # API key authentication dependency
+│   ├── logger.py                  # Centralized logging with correlation ID
+│   ├── middleware.py              # Request correlation ID middleware
 │   ├── exceptions.py              # Custom exception hierarchy
 │   └── exception_handlers.py      # Global FastAPI exception handlers
 ├── messages/                      # Message feature module
@@ -114,23 +118,32 @@ app/
 │   │   └── update_message.py      # Update DTO (inherits base — PATCH semantics)
 │   ├── interfaces/                # Abstractions
 │   │   └── message_repository.py  # Repository Protocol (dependency inversion)
-│   ├── model.py                   # SQLAlchemy entity
-│   ├── repository.py              # Database queries (single responsibility)
-│   ├── service.py                 # Business logic layer
+│   ├── model.py                   # SQLAlchemy entity (PostgreSQL ENUM, indexes)
+│   ├── repository.py              # Async database queries (single responsibility)
+│   ├── service.py                 # Business logic (depends on Protocol, not concrete)
 │   ├── router.py                  # HTTP endpoints with OpenAPI metadata
 │   └── responses.py               # Response schemas
 └── health/                        # Health check module
     └── router.py
+
+tests/
+├── conftest.py                    # Fixtures (testcontainers PostgreSQL, async client)
+├── test_health.py                 # Health endpoint tests
+└── messages/
+    ├── test_create.py             # POST endpoint tests
+    ├── test_update.py             # PATCH endpoint tests
+    └── test_get.py                # GET endpoint tests
 ```
 
 ### Design Patterns
 
 - **Repository pattern** — separates database queries from business logic
-- **Dependency Injection** — FastAPI's `Depends()` chain: DB session → repository → service
+- **Dependency Injection** — FastAPI's `Depends()` chain: async DB session → repository → service
 - **Protocol (interface)** — `IMessageRepository` for dependency inversion
 - **DTO pattern with inheritance** — `BaseMessageDto` with shared validation, child DTOs for create/update
 - **Custom exception hierarchy** — `IngemarkBaseError` → `IngemarkNotFoundError`, etc.
 - **Global exception handlers** — consistent JSON error responses across the API
+- **Correlation ID middleware** — unique request ID for log tracing via `X-Correlation-ID` header
 
 ### Security
 
@@ -149,7 +162,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 make dev
 
-# Run tests
+# Run tests (requires Docker — uses testcontainers with real PostgreSQL)
 make test
 
 # Run linter and format check
@@ -161,16 +174,16 @@ make format
 
 ### Available Makefile commands
 
-| Command        | Description                        |
-|----------------|------------------------------------|
-| `make dev`     | Install dependencies in venv       |
-| `make test`    | Run pytest                         |
-| `make lint`    | Run ruff lint + format check       |
-| `make format`  | Auto-fix lint + formatting         |
-| `make up`      | Start with Docker Compose          |
-| `make down`    | Stop Docker Compose                |
-| `make logs`    | Tail container logs                |
-| `make migrate` | Run Alembic migrations locally     |
+| Command        | Description                                     |
+|----------------|-------------------------------------------------|
+| `make dev`     | Install dependencies in venv                    |
+| `make test`    | Run pytest (requires Docker for testcontainers) |
+| `make lint`    | Run ruff lint + format check                    |
+| `make format`  | Auto-fix lint + formatting                      |
+| `make up`      | Start with Docker Compose                       |
+| `make down`    | Stop Docker Compose                             |
+| `make logs`    | Tail container logs                             |
+| `make migrate` | Run Alembic migrations locally                  |
 
 ### Database migrations
 
@@ -197,16 +210,20 @@ Three GitHub Actions workflows:
 | **develop.yml**   | Push to `develop`    | Lint → Test → Docker build      |
 | **main.yml**      | Push to `main`       | Lint → Test → Docker build + tag|
 
+Tests run against a real PostgreSQL instance via [testcontainers](https://testcontainers.com/) — no mocks, no SQLite.
+
 ## Tech Choices
 
-| Technology             | Reason                                                                      |
-|------------------------|-----------------------------------------------------------------------------|
-| **FastAPI**            | Async support, auto OpenAPI docs, built-in DI, Pydantic validation          |
-| **SQLAlchemy 2.0**     | Mature ORM with type hints, Alembic migration support                       |
-| **Alembic**            | Industry standard for SQLAlchemy database migrations                        |
-| **Pydantic Settings**  | Type-safe environment variable parsing with validation                      |
-| **PostgreSQL**         | Required by assignment; ENUM type for role, UUID for IDs                    |
-| **Ruff**               | Fast linter + formatter (replaces flake8, black, isort)                     |
-| **pytest**             | Standard Python testing framework with fixtures                             |
-| **API key auth**       | Simple, appropriate for service-to-service communication in a larger system |
-| **pyproject.toml**     | Modern Python packaging standard (PEP 621) — single config file            |
+| Technology             | Reason                                                                         |
+|------------------------|--------------------------------------------------------------------------------|
+| **FastAPI**            | Async support, auto OpenAPI docs, built-in DI, Pydantic validation             |
+| **SQLAlchemy 2.0**     | Async ORM with `asyncpg`, type hints, migration support via Alembic            |
+| **asyncpg**            | High-performance async PostgreSQL driver                                       |
+| **Alembic**            | Industry standard for SQLAlchemy database migrations                           |
+| **Pydantic Settings**  | Type-safe environment variable parsing with validation                         |
+| **PostgreSQL**         | Required by assignment; ENUM type for role, UUID for IDs, DB-level defaults    |
+| **Ruff**               | Fast linter + formatter (replaces flake8, black, isort)                        |
+| **pytest**             | Standard Python testing framework with async support                           |
+| **testcontainers**     | Spins up real PostgreSQL for tests — validates ENUM, UUID, timezone behavior   |
+| **API key auth**       | Simple, appropriate for service-to-service communication in a larger system    |
+| **pyproject.toml**     | Modern Python packaging standard (PEP 621) — single config file                |

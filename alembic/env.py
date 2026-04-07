@@ -8,7 +8,10 @@ from app.core.database import Base
 from app.messages.model import Message  # noqa: F401 — registers model with Base
 
 config = context.config
-config.set_main_option("sqlalchemy.url", app_config.DATABASE.url)
+
+# Convert async URL to sync for Alembic (asyncpg → psycopg2)
+sync_url = app_config.DATABASE.url.replace("+asyncpg", "")
+config.set_main_option("sqlalchemy.url", sync_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

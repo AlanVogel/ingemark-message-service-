@@ -1,30 +1,30 @@
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import config
 
-engine = create_engine(config.DATABASE.url, echo=config.DATABASE.echo)
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+engine = create_async_engine(config.DATABASE.url, echo=config.DATABASE.echo)
+async_session = async_sessionmaker(bind=engine, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
     pass
 
 
-def get_db() -> Generator[Session, None, None]:
-    """FastAPI dependency that provides a database session.
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency that provides an async database session.
 
     Automatically commits on success, rolls back on error,
     and closes the session when done.
     """
-    db = SessionLocal()
+    session = async_session()
     try:
-        yield db
-        db.commit()
+        yield session
+        await session.commit()
     except Exception:
-        db.rollback()
+        await session.rollback()
         raise
     finally:
-        db.close()
+        await session.close()

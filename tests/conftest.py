@@ -1,67 +1,76 @@
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import StaticPool, create_engine
-from sqlalchemy.orm import sessionmaker
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from testcontainers.postgres import PostgresContainer
 
 from app.core.auth import verify_api_key
 from app.core.database import Base, get_db
 from app.main import app
 
-# In-memory SQLite for fast tests (no Docker needed for test DB)
-TEST_DATABASE_URL = "sqlite:///./test.db"
-engine = create_engine(
-    TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestSession = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-
 TEST_API_KEY = "test-api-key"
 
+postgres = PostgresContainer("postgres:16-alpine", driver="asyncpg")
 
-def override_get_db():
-    db = TestSession()
-    try:
-        yield db
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
+
+@pytest.fixture(scope="session", autouse=True)
+def postgres_container():
+    """Start a real PostgreSQL container for the entire test session."""
+    postgres.start()
+    yield postgres
+    postgres.stop()
+
+
+@pytest.fixture(autouse=True)
+async def setup_db(postgres_container):
+    """Create tables before each test, drop after."""
+    url = postgres_container.get_connection_url()
+    engine = create_async_engine(url)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    test_session = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+    async def override_get_db():
+        session = test_session()
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    yield
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+    await engine.dispose()
+    app.dependency_overrides.pop(get_db, None)
 
 
 async def override_verify_api_key():
     return TEST_API_KEY
 
 
-@pytest.fixture(autouse=True)
-def setup_db():
-    """Create tables before each test, drop after."""
-    # SQLite doesn't support Postgres ENUM, so we need to handle this
-    # For full integration tests, use docker-compose.test.yml with real Postgres
-    Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
-
-
 @pytest.fixture
-def client() -> TestClient:
-    """Test client with overridden dependencies."""
-    app.dependency_overrides[get_db] = override_get_db
+async def client() -> AsyncClient:
+    """Async test client with overridden dependencies."""
     app.dependency_overrides[verify_api_key] = override_verify_api_key
-    with TestClient(app) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(verify_api_key, None)
 
 
 @pytest.fixture
-def unauthenticated_client() -> TestClient:
-    """Test client with only DB override — no auth bypass."""
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as c:
+async def unauthenticated_client() -> AsyncClient:
+    """Async test client with only DB override — no auth bypass."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
-    app.dependency_overrides.clear()
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import verify_api_key
 from app.core.database import get_db
@@ -17,7 +17,7 @@ router = APIRouter(
 )
 
 
-def _get_service(db: Session = Depends(get_db)) -> MessageService:
+def _get_service(db: AsyncSession = Depends(get_db)) -> MessageService:
     """Dependency injection: DB session → repository → service."""
     repository = MessageRepository(db)
     return MessageService(repository)
@@ -40,7 +40,7 @@ async def create_message(
     dto: CreateMessageDto,
     service: MessageService = Depends(_get_service),
 ) -> MessageResponse:
-    return service.create_message(dto)
+    return await service.create_message(dto)
 
 
 @router.patch(
@@ -61,7 +61,7 @@ async def update_message(
     dto: UpdateMessageDto = ...,
     service: MessageService = Depends(_get_service),
 ) -> MessageResponse:
-    return service.update_message(message_id, dto)
+    return await service.update_message(message_id, dto)
 
 
 @router.get(
@@ -93,4 +93,4 @@ async def get_messages(
     ),
     service: MessageService = Depends(_get_service),
 ) -> PaginatedMessagesResponse:
-    return service.get_all_messages(chat_id, page, page_size)
+    return await service.get_all_messages(chat_id, page, page_size)

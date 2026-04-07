@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings
 
 
 class DatabaseConfig(BaseSettings):
-    url: str = "postgresql://ingemark:ingemark@db:5432/ingemark"
+    url: str = "postgresql+asyncpg://ingemark:ingemark@db:5432/ingemark"
     echo: bool = False
 
     model_config = {"env_prefix": "DB_"}

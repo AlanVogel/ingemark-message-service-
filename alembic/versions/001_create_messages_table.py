@@ -27,9 +27,14 @@ def upgrade() -> None:
         sa.Column("chat_id", postgresql.UUID(as_uuid=True), nullable=False, index=True),
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("rating", sa.Boolean(), nullable=True),
-        sa.Column("sent_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("sent_at", sa.DateTime(timezone=True), nullable=False, index=True),
         sa.Column("role", message_role, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
     )
 
